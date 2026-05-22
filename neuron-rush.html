@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Neuron Rush 🧠 — by Sundaranandhan R J</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#020818;color:#e0f7fa;font-family:'JetBrains Mono',monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;overflow:hidden}
+  #bg{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}
+  #wrapper{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:12px}
+  h1{font-size:28px;font-weight:800;color:#4fc3f7;letter-spacing:3px;text-shadow:0 0 20px #4fc3f7aa}
+  .sub{font-size:11px;color:#546e7a;letter-spacing:2px;margin-top:-8px}
+  #gameArea{position:relative;width:640px;height:420px;background:#0a0f2e;border:1.5px solid #1565c0;border-radius:10px;overflow:hidden;box-shadow:0 0 40px #1565c055}
+  canvas{display:block}
+  #hud{display:flex;gap:24px;justify-content:space-between;width:640px}
+  .hud-box{background:#0d1b3e;border:1px solid #1565c0;border-radius:6px;padding:8px 18px;display:flex;flex-direction:column;align-items:center;gap:2px}
+  .hud-label{font-size:10px;color:#546e7a;letter-spacing:1px}
+  .hud-val{font-size:20px;font-weight:800;color:#4fc3f7}
+  #overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(2,8,24,0.92);z-index:10}
+  #overlay h2{font-size:26px;font-weight:800;color:#4fc3f7;text-shadow:0 0 20px #4fc3f7}
+  #overlay p{font-size:12px;color:#90caf9;text-align:center;max-width:400px;line-height:1.8}
+  #startBtn{background:#1565c0;color:#e3f2fd;border:none;padding:12px 36px;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:2px;transition:all 0.2s}
+  #startBtn:hover{background:#1976d2;box-shadow:0 0 20px #1565c0aa}
+  #tip{font-size:10px;color:#37474f;letter-spacing:1px}
+  .key{background:#0d1b3e;border:1px solid #1565c0;border-radius:4px;padding:2px 8px;color:#4fc3f7;font-size:11px}
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div id="wrapper">
+  <h1>🧠 NEURON RUSH</h1>
+  <p class="sub">by Sundaranandhan R J · SRMIST CSE AI&ML '27</p>
+  <div id="hud">
+    <div class="hud-box"><span class="hud-label">SCORE</span><span class="hud-val" id="scoreVal">0</span></div>
+    <div class="hud-box"><span class="hud-label">LEVEL</span><span class="hud-val" id="levelVal">1</span></div>
+    <div class="hud-box"><span class="hud-label">NEURONS</span><span class="hud-val" id="neuronsVal">0</span></div>
+    <div class="hud-box"><span class="hud-label">LIVES</span><span class="hud-val" id="livesVal">❤️❤️❤️</span></div>
+    <div class="hud-box"><span class="hud-label">ACCURACY</span><span class="hud-val" id="accVal">100%</span></div>
+  </div>
+  <div id="gameArea">
+    <canvas id="gc" width="640" height="420"></canvas>
+    <div id="overlay">
+      <h2>🧠 NEURON RUSH</h2>
+      <p>
+        You are a signal firing through a neural network!<br/>
+        <strong style="color:#4fc3f7">Collect 🔵 data packets</strong> to build neurons.<br/>
+        <strong style="color:#ff6b35">Avoid ❌ loss spikes</strong> — they kill your accuracy.<br/>
+        <strong style="color:#a5d6a7">Grab ⚡ activation bursts</strong> for bonus points!<br/><br/>
+        <span class="key">←→↑↓</span> or <span class="key">WASD</span> to move · Every 10 neurons = Level Up!
+      </p>
+      <button id="startBtn">▶ START TRAINING</button>
+      <p id="tip">This game was built by an AI/ML student — not a game dev 😄</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── BG STARS ─────────────────────────────────────────────────
+const bgC = document.getElementById('bg');
+const bgCtx = bgC.getContext('2d');
+bgC.width = window.innerWidth; bgC.height = window.innerHeight;
+const stars = Array.from({length:120},()=>({x:Math.random()*bgC.width,y:Math.random()*bgC.height,r:Math.random()*1.5+0.3,o:Math.random(),s:Math.random()*0.01+0.003}));
+function drawBG(){bgCtx.clearRect(0,0,bgC.width,bgC.height);stars.forEach(s=>{s.o+=s.s;if(s.o>1||s.o<0)s.s*=-1;bgCtx.beginPath();bgCtx.arc(s.x,s.y,s.r,0,Math.PI*2);bgCtx.fillStyle=`rgba(79,195,247,${s.o})`;bgCtx.fill()});requestAnimationFrame(drawBG)}
+drawBG();
+
+// ─── GAME ─────────────────────────────────────────────────────
+const canvas = document.getElementById('gc');
+const ctx = canvas.getContext('2d');
+const W = 640, H = 420, SZ = 20;
+const COLS = W/SZ, ROWS = H/SZ;
+
+let player, dir, nextDir, items, particles, score, level, neurons, lives, total, correct, gameLoop, running;
+
+const COLORS = {bg:'#0a0f2e',grid:'#0d1b3e',player:'#4fc3f7',playerGlow:'rgba(79,195,247,0.4)',
+  data:'#1565c0',dataGlow:'rgba(21,101,192,0.6)',loss:'#f44336',lossGlow:'rgba(244,67,54,0.6)',
+  act:'#76ff03',actGlow:'rgba(118,255,3,0.5)',trail:'rgba(79,195,247,0.15)',text:'#4fc3f7'};
+
+function init(){
+  player = [{x:10,y:10}];
+  dir = {x:1,y:0}; nextDir = {x:1,y:0};
+  items = []; particles = [];
+  score = 0; level = 1; neurons = 0; lives = 3; total = 0; correct = 0;
+  spawnItem(); spawnItem(); updateHUD();
+}
+
+function spawnItem(){
+  const types = ['data','data','data','loss','act'];
+  const t = types[Math.floor(Math.random()*types.length)];
+  let x,y,ok;
+  do{x=Math.floor(Math.random()*COLS);y=Math.floor(Math.random()*ROWS);ok=!player.some(p=>p.x===x&&p.y===y)&&!items.some(i=>i.x===x&&i.y===y)}while(!ok);
+  items.push({x,y,type:t,pulse:0});
+}
+
+function addParticles(x,y,color,n=8){
+  for(let i=0;i<n;i++) particles.push({x:x*SZ+SZ/2,y:y*SZ+SZ/2,vx:(Math.random()-0.5)*4,vy:(Math.random()-0.5)*4,life:1,color});
+}
+
+function updateHUD(){
+  document.getElementById('scoreVal').textContent=score;
+  document.getElementById('levelVal').textContent=level;
+  document.getElementById('neuronsVal').textContent=neurons;
+  document.getElementById('livesVal').textContent='❤️'.repeat(lives)+'🖤'.repeat(Math.max(0,3-lives));
+  document.getElementById('accVal').textContent=total===0?'100%':Math.round((correct/total)*100)+'%';
+}
+
+function gameStep(){
+  dir = {...nextDir};
+  const head = {x:(player[0].x+dir.x+COLS)%COLS, y:(player[0].y+dir.y+ROWS)%ROWS};
+  // Collision with self (only if >4 long)
+  if(player.length>4 && player.slice(1).some(p=>p.x===head.x&&p.y===head.y)){
+    loseLife(); return;
+  }
+  player.unshift(head);
+  let ate = false;
+  for(let i=items.length-1;i>=0;i--){
+    const item = items[i];
+    if(item.x===head.x&&item.y===head.y){
+      if(item.type==='data'){
+        score+=10*level; neurons++; correct++; total++;
+        addParticles(head.x,head.y,'#4fc3f7',10);
+        if(neurons%10===0){level++;spawnItem()}
+        spawnItem();
+      } else if(item.type==='loss'){
+        total++; loseLife(); items.splice(i,1);
+        addParticles(head.x,head.y,'#f44336',12);
+        spawnItem(); ate=true; player.pop(); break;
+      } else if(item.type==='act'){
+        score+=50*level; correct++; total++;
+        addParticles(head.x,head.y,'#76ff03',14);
+        items.splice(i,1); spawnItem(); spawnItem();
+      }
+      items.splice(i,1); ate=true; break;
+    }
+  }
+  if(!ate) player.pop();
+  updateHUD();
+}
+
+function loseLife(){
+  lives--;
+  if(lives<=0){endGame();return}
+  updateHUD();
+}
+
+function endGame(){
+  running=false; clearInterval(gameLoop);
+  const ov = document.getElementById('overlay');
+  ov.innerHTML=`
+    <h2 style="color:#f44336">💀 TRAINING FAILED</h2>
+    <p style="color:#90caf9">Score: <strong style="color:#4fc3f7">${score}</strong> · Level: <strong style="color:#4fc3f7">${level}</strong><br/>
+    Neurons Built: <strong style="color:#4fc3f7">${neurons}</strong> · Accuracy: <strong style="color:#4fc3f7">${total===0?'100':Math.round((correct/total)*100)}%</strong><br/><br/>
+    Even neural networks fail during training.<br/>The real flex is running it again. 🚀</p>
+    <button id="startBtn" onclick="startGame()">🔁 RETRAIN</button>
+  `;
+  ov.style.display='flex';
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // Grid
+  ctx.fillStyle=COLORS.bg; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle=COLORS.grid; ctx.lineWidth=0.5;
+  for(let i=0;i<=COLS;i++){ctx.beginPath();ctx.moveTo(i*SZ,0);ctx.lineTo(i*SZ,H);ctx.stroke()}
+  for(let j=0;j<=ROWS;j++){ctx.beginPath();ctx.moveTo(0,j*SZ);ctx.lineTo(W,j*SZ);ctx.stroke()}
+
+  // Trail
+  player.forEach((p,i)=>{
+    const alpha = 1-i/player.length;
+    ctx.fillStyle=i===0?COLORS.player:`rgba(79,195,247,${alpha*0.5})`;
+    if(i===0){
+      ctx.shadowColor=COLORS.playerGlow; ctx.shadowBlur=16;
+      ctx.beginPath();ctx.roundRect(p.x*SZ+1,p.y*SZ+1,SZ-2,SZ-2,4);ctx.fill();
+      ctx.shadowBlur=0;
+      // Face on head
+      ctx.fillStyle='#0a0f2e';
+      ctx.beginPath();ctx.arc(p.x*SZ+6,p.y*SZ+7,2,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(p.x*SZ+14,p.y*SZ+7,2,0,Math.PI*2);ctx.fill();
+    } else {
+      ctx.beginPath();ctx.roundRect(p.x*SZ+2,p.y*SZ+2,SZ-4,SZ-4,3);ctx.fill();
+    }
+  });
+
+  // Items
+  items.forEach(item=>{
+    item.pulse=(item.pulse||0)+0.08;
+    const glow=Math.sin(item.pulse)*0.3+0.7;
+    const cx=item.x*SZ+SZ/2, cy=item.y*SZ+SZ/2;
+    ctx.save();
+    if(item.type==='data'){
+      ctx.shadowColor='#4fc3f7'; ctx.shadowBlur=12*glow;
+      ctx.fillStyle='#1565c0';
+      ctx.beginPath();ctx.roundRect(item.x*SZ+3,item.y*SZ+3,SZ-6,SZ-6,4);ctx.fill();
+      ctx.fillStyle='#4fc3f7'; ctx.font='bold 13px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('🔵',cx,cy);
+    } else if(item.type==='loss'){
+      ctx.shadowColor='#f44336'; ctx.shadowBlur=14*glow;
+      ctx.fillStyle='#b71c1c';
+      ctx.beginPath();ctx.roundRect(item.x*SZ+3,item.y*SZ+3,SZ-6,SZ-6,4);ctx.fill();
+      ctx.font='13px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('❌',cx,cy);
+    } else {
+      ctx.shadowColor='#76ff03'; ctx.shadowBlur=16*glow;
+      ctx.fillStyle='#1b5e20';
+      ctx.beginPath();ctx.roundRect(item.x*SZ+3,item.y*SZ+3,SZ-6,SZ-6,4);ctx.fill();
+      ctx.font='13px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('⚡',cx,cy);
+    }
+    ctx.restore();
+  });
+
+  // Particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx; p.y+=p.vy; p.life-=0.04; p.vx*=0.95; p.vy*=0.95;
+    if(p.life<=0){particles.splice(i,1);continue}
+    ctx.save();ctx.globalAlpha=p.life;ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,3*p.life,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  // Level indicator
+  ctx.fillStyle='rgba(21,101,192,0.15)';
+  ctx.font='bold 11px JetBrains Mono';ctx.fillStyle='#1565c0';
+  ctx.textAlign='right';ctx.fillText(`LEVEL ${level}`,W-8,H-8);
+}
+
+function loop(){
+  if(!running) return;
+  gameStep(); draw();
+}
+
+function startGame(){
+  document.getElementById('overlay').style.display='none';
+  init(); running=true;
+  if(gameLoop) clearInterval(gameLoop);
+  const speed = Math.max(80, 180-level*10);
+  gameLoop = setInterval(loop, speed);
+  // Draw loop separate for smooth particles
+  function animLoop(){if(running){draw();requestAnimationFrame(animLoop)}}
+  animLoop();
+}
+
+document.addEventListener('keydown',e=>{
+  const map={ArrowUp:{x:0,y:-1},ArrowDown:{x:0,y:1},ArrowLeft:{x:-1,y:0},ArrowRight:{x:1,y:0},
+             w:{x:0,y:-1},s:{x:0,y:1},a:{x:-1,y:0},d:{x:1,y:0}};
+  const nd=map[e.key];
+  if(nd&&!(nd.x===-dir.x&&dir.x!==0)&&!(nd.y===-dir.y&&dir.y!==0)) nextDir=nd;
+  if([' ','ArrowUp','ArrowDown'].includes(e.key)) e.preventDefault();
+});
+
+document.getElementById('startBtn').onclick=startGame;
+</script>
+</body>
+</html>
